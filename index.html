@@ -127,7 +127,7 @@
         <div class="sgx-panel">
             <h1>SGX.GALLERY</h1>
             <p style="color: #888; margin-bottom: 30px; font-size: 0.85rem;">
-                PARAMETRIC ASSET INJECTION V1<br>
+                PARAMETRIC ASSET INJECTION V1.5<br>
                 <span style="color: var(--sgx-blue);">Tier 2 - Rent-to-Own Infrastructure</span>
             </p>
             <button id="btn-start" class="sgx-btn">ENLAZAR CÁMARA IA</button>
@@ -153,14 +153,23 @@
             trackingMode: 'Idle',
             
             config: {
-                // Room Params
+                // Room Params (From SGX Portal V3)
                 boxWidth: 24, boxHeight: 12, boxDepth: 18,
+                boxTextureUrl: 'https://images.unsplash.com/photo-1600607686527-6fb886090705?q=80&w=1000&auto=format&fit=crop', // Concrete texture
+                textureScale: 0.15,
+                showGrids: true,
+                camDistance: 8,
+                
+                // Physics
                 modo: 'Portal (Físico)',
                 amplitudX: 10.0, amplitudY: 8.0, suavizado: 0.05,
+                invertirX: false, invertirY: false,
                 
                 // Gallery Params
                 activeFrame: 0,
                 frameStyle: 'Neon Glow',
+                remoteImageUrl: 'https://images.unsplash.com/photo-1549490349-8643362247b5?q=80&w=800&auto=format&fit=crop', // Default URL
+                injectRemote: () => GalleryManager.injectTexture(SGX.config.activeFrame, SGX.config.remoteImageUrl),
                 uploadAction: () => document.getElementById('local-image-upload').click(),
                 resetFrames: () => GalleryManager.resetDefaultTextures()
             }
@@ -168,28 +177,38 @@
 
         // --- THREE.JS ENGINE ---
         const scene = new THREE.Scene();
-        scene.fog = new THREE.FogExp2(0x050505, 0.02);
+        scene.fog = new THREE.FogExp2(0x020202, 0.025);
         
         const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Optimizacion movil
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.outputEncoding = THREE.sRGBEncoding;
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         document.getElementById('scene-container').appendChild(renderer.domElement);
 
         // Iluminación Atmosférica SGX
-        const amb = new THREE.AmbientLight(0xffffff, 0.3);
+        const amb = new THREE.AmbientLight(0xffffff, 0.4);
         scene.add(amb);
-        const spot = new THREE.SpotLight(0xffffff, 1.5);
-        spot.position.set(0, 10, 10);
-        spot.angle = Math.PI / 4;
+        const spot = new THREE.SpotLight(0xffffff, 2.0);
+        spot.position.set(0, 10, 5);
+        spot.angle = Math.PI / 3;
         spot.penumbra = 0.5;
+        spot.decay = 2;
+        spot.distance = 50;
         scene.add(spot);
 
-        // --- 1. ENTORNO PARAMÉTRICO (THE ROOM) ---
+        // --- 1. ENTORNO PARAMÉTRICO (THE ROOM WITH TEXTURES) ---
         let roomGroup = new THREE.Group();
         scene.add(roomGroup);
+
+        const boxTexLoader = new THREE.TextureLoader();
+        boxTexLoader.setCrossOrigin('anonymous'); // Evita errores CORS
+        let currentTexUrl = SGX.config.boxTextureUrl;
+        let baseTex = boxTexLoader.load(currentTexUrl);
+        baseTex.wrapS = THREE.RepeatWrapping;
+        baseTex.wrapT = THREE.RepeatWrapping;
+        baseTex.encoding = THREE.sRGBEncoding;
 
         function buildEncasing() {
             while(roomGroup.children.length > 0) { 
@@ -198,42 +217,71 @@
                 roomGroup.remove(obj); 
             }
 
-            const { boxWidth: w, boxHeight: h, boxDepth: d } = SGX.config;
+            const { boxWidth: w, boxHeight: h, boxDepth: d, textureScale: tScale } = SGX.config;
             const boxGeo = new THREE.BoxGeometry(w, h, d);
             
-            // Material minimalista oscuro para resaltar el arte
-            const wallMat = new THREE.MeshStandardMaterial({
-                color: 0x111111, roughness: 0.9, metalness: 0.1, side: THREE.BackSide
-            });
-            const roomMesh = new THREE.Mesh(boxGeo, wallMat);
+            // Recargar textura si cambia la URL
+            if (currentTexUrl !== SGX.config.boxTextureUrl) {
+                currentTexUrl = SGX.config.boxTextureUrl;
+                baseTex = boxTexLoader.load(currentTexUrl);
+                baseTex.wrapS = THREE.RepeatWrapping;
+                baseTex.wrapT = THREE.RepeatWrapping;
+                baseTex.encoding = THREE.sRGBEncoding;
+            }
+
+            // Material mapper independiente para cada eje (evita stretching)
+            const createWallMat = (repeatU, repeatV) => {
+                const tex = baseTex.clone();
+                tex.repeat.set(repeatU * tScale, repeatV * tScale);
+                tex.needsUpdate = true;
+                return new THREE.MeshStandardMaterial({
+                    map: tex,
+                    color: 0x888888, // Tint oscuro para no quemar la textura y dar ambiente
+                    side: THREE.BackSide,
+                    roughness: 0.9,
+                    metalness: 0.1
+                });
+            };
+
+            // Cálculo de áreas (Ancho x Alto)
+            const matX = createWallMat(d, h); // Paredes L/R
+            const matY = createWallMat(w, d); // Techo/Piso
+            const matZ = createWallMat(w, h); // Frente/Fondo
+
+            // Right, Left, Top, Bottom, Front, Back
+            const materials = [matX, matX, matY, matY, matZ, matZ];
+            
+            const roomMesh = new THREE.Mesh(boxGeo, materials);
             roomGroup.add(roomMesh);
 
-            // Rejilla de piso (Estilo Cyberpunk/SGX Blueprint)
-            const gridBottom = new THREE.GridHelper(Math.max(w, d), 20, 0x32527B, 0x1a1a1a);
-            gridBottom.position.y = -h / 2 + 0.05;
-            roomGroup.add(gridBottom);
-            
-            // Rejilla de techo iluminada
-            const gridTop = new THREE.GridHelper(Math.max(w, d), 20, 0xFDCC0D, 0x111111);
-            gridTop.position.y = h / 2 - 0.05;
-            roomGroup.add(gridTop);
+            // Rejillas (Grids)
+            if (SGX.config.showGrids) {
+                const gridBottom = new THREE.GridHelper(Math.max(w, d), 20, 0x32527B, 0x111111);
+                gridBottom.position.y = -h / 2 + 0.05;
+                roomGroup.add(gridBottom);
+                
+                const gridTop = new THREE.GridHelper(Math.max(w, d), 20, 0xFDCC0D, 0x111111);
+                gridTop.position.y = h / 2 - 0.05;
+                roomGroup.add(gridTop);
+            }
 
             GalleryManager.buildFrames(w, h, d);
         }
 
         // --- 2. GALLERY MANAGER (INYECCIÓN DE ASSETS) ---
         const textureLoader = new THREE.TextureLoader();
+        textureLoader.setCrossOrigin('anonymous'); // Evita errores CORS en texturas remotas
         
         const GalleryManager = {
-            frames: [], // Arrays de objetos conteniendo { canvasMesh, borderMesh }
+            frames: [],
             
             buildFrames: function(w, h, d) {
-                // Limpiar marcos anteriores
                 this.frames.forEach(f => {
                     scene.remove(f.group);
-                    f.canvasMesh.geometry.dispose();
+                    if(f.canvasMesh.geometry) f.canvasMesh.geometry.dispose();
+                    if(f.canvasMesh.material.map) f.canvasMesh.material.map.dispose();
                     f.canvasMesh.material.dispose();
-                    f.borderMesh.geometry.dispose();
+                    if(f.borderMesh.geometry) f.borderMesh.geometry.dispose();
                     f.borderMesh.material.dispose();
                 });
                 this.frames = [];
@@ -251,15 +299,13 @@
                 frameConfigs.forEach((config, index) => {
                     const group = new THREE.Group();
                     
-                    // 1. El Canvas (Donde va la foto)
-                    const canvasMat = new THREE.MeshBasicMaterial({ color: 0x333333 });
+                    const canvasMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
                     const canvasMesh = new THREE.Mesh(canvasGeo, canvasMat);
                     
-                    // 2. El Borde (Paramétrico)
                     const borderGeo = new THREE.BoxGeometry(4.4, 6.4, 0.2);
                     const borderMat = this.getStyleMaterial();
                     const borderMesh = new THREE.Mesh(borderGeo, borderMat);
-                    borderMesh.position.z = -0.15; // Ligeramente detrás del canvas
+                    borderMesh.position.z = -0.15;
 
                     group.add(borderMesh);
                     group.add(canvasMesh);
@@ -268,7 +314,6 @@
                     group.rotation.y = config.rotY;
                     
                     scene.add(group);
-                    
                     this.frames.push({ group, canvasMesh, borderMesh });
                 });
 
@@ -277,14 +322,10 @@
 
             getStyleMaterial: function() {
                 switch(SGX.config.frameStyle) {
-                    case 'Neon Glow': 
-                        return new THREE.MeshBasicMaterial({ color: 0xFDCC0D });
-                    case 'Industrial Blue': 
-                        return new THREE.MeshStandardMaterial({ color: 0x32527B, metalness: 0.8, roughness: 0.2 });
-                    case 'Minimalist White': 
-                        return new THREE.MeshBasicMaterial({ color: 0xffffff });
-                    default: 
-                        return new THREE.MeshBasicMaterial({ color: 0x444444 });
+                    case 'Neon Glow': return new THREE.MeshBasicMaterial({ color: 0xFDCC0D });
+                    case 'Industrial Blue': return new THREE.MeshStandardMaterial({ color: 0x32527B, metalness: 0.8, roughness: 0.2 });
+                    case 'Minimalist White': return new THREE.MeshBasicMaterial({ color: 0xffffff });
+                    default: return new THREE.MeshBasicMaterial({ color: 0x444444 });
                 }
             },
 
@@ -301,34 +342,33 @@
                 
                 textureLoader.load(url, (texture) => {
                     texture.encoding = THREE.sRGBEncoding;
-                    // Ajustar aspect ratio si es necesario
                     const aspect = texture.image.width / texture.image.height;
                     const canvasMesh = this.frames[frameIndex].canvasMesh;
                     
-                    // Forzamos la geometría a mantener el aspecto de la imagen (Base height 6)
                     canvasMesh.geometry.dispose();
                     canvasMesh.geometry = new THREE.PlaneGeometry(6 * aspect, 6);
                     
-                    // Ajustar el borde también
                     const borderMesh = this.frames[frameIndex].borderMesh;
                     borderMesh.geometry.dispose();
                     borderMesh.geometry = new THREE.BoxGeometry((6 * aspect) + 0.4, 6.4, 0.2);
 
                     canvasMesh.material.map = texture;
-                    canvasMesh.material.color.setHex(0xffffff); // Quitar tint oscuro
+                    canvasMesh.material.color.setHex(0xffffff);
                     canvasMesh.material.needsUpdate = true;
+                }, undefined, (err) => {
+                    console.error("Error cargando textura:", err);
+                    alert("No se pudo cargar la imagen. Verifica que la URL sea válida y permita CORS.");
                 });
             },
 
             resetDefaultTextures: function() {
                 const placeholders = [
-                    'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=800&auto=format&fit=crop', // Abstract
-                    'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?q=80&w=800&auto=format&fit=crop', // Tech
-                    'https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?q=80&w=800&auto=format&fit=crop', // 3D Render
-                    'https://images.unsplash.com/photo-1518640467707-6811f4a6ab73?q=80&w=800&auto=format&fit=crop', // Architecture
-                    'https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?q=80&w=800&auto=format&fit=crop'  // Metaverse
+                    'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=800&auto=format&fit=crop',
+                    'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?q=80&w=800&auto=format&fit=crop',
+                    'https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?q=80&w=800&auto=format&fit=crop',
+                    'https://images.unsplash.com/photo-1518640467707-6811f4a6ab73?q=80&w=800&auto=format&fit=crop',
+                    'https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?q=80&w=800&auto=format&fit=crop'
                 ];
-                
                 this.frames.forEach((f, i) => {
                     this.injectTexture(i, placeholders[i % placeholders.length]);
                 });
@@ -353,14 +393,13 @@
             
             const galleryFolder = gui.addFolder('🖼️ Gallery Injection');
             galleryFolder.add(SGX.config, 'activeFrame', { 
-                'Frame 1 (Izq)': 0, 
-                'Frame 2 (Centro)': 1, 
-                'Frame 3 (Der)': 2,
-                'Frame 4 (Pared Izq)': 3,
-                'Frame 5 (Pared Der)': 4
+                'Frame 1 (Izq)': 0, 'Frame 2 (Centro)': 1, 'Frame 3 (Der)': 2,
+                'Frame 4 (Pared Izq)': 3, 'Frame 5 (Pared Der)': 4
             }).name('Seleccionar Marco').onChange(v => SGX.config.activeFrame = parseInt(v));
             
-            galleryFolder.add(SGX.config, 'uploadAction').name('⬆️ Subir Imagen Local');
+            galleryFolder.add(SGX.config, 'remoteImageUrl').name('URL de Imagen');
+            galleryFolder.add(SGX.config, 'injectRemote').name('🔗 Inyectar URL');
+            galleryFolder.add(SGX.config, 'uploadAction').name('⬆️ Subir Archivo Local');
             
             galleryFolder.add(SGX.config, 'frameStyle', ['Neon Glow', 'Industrial Blue', 'Minimalist White', 'Dark Matter'])
                 .name('Estilo de Marco').onChange(() => GalleryManager.updateGlobalStyle());
@@ -370,19 +409,30 @@
             physFolder.add(SGX.config, 'modo', ['Portal (Físico)', 'Espejo (Sigue Mirada)']);
             physFolder.add(SGX.config, 'amplitudX', 1, 30).name('Amplitud X');
             physFolder.add(SGX.config, 'amplitudY', 1, 30).name('Amplitud Y');
+            physFolder.add(SGX.config, 'suavizado', 0.001, 0.5).name('Inercia (Fricción)');
+            physFolder.add(SGX.config, 'invertirX').name('Invertir Eje X');
+            physFolder.add(SGX.config, 'invertirY').name('Invertir Eje Y');
 
-            const roomFolder = gui.addFolder('📐 Dimensions');
+            const roomFolder = gui.addFolder('📐 Space Dimensions & Textures');
+            roomFolder.add(SGX.config, 'boxTextureUrl').name('URL Textura Habitación').onChange(buildEncasing);
+            roomFolder.add(SGX.config, 'textureScale', 0.05, 1.0).name('Escala de Textura').onChange(buildEncasing);
             roomFolder.add(SGX.config, 'boxWidth', 10, 50).name('Ancho (X)').onChange(buildEncasing);
+            roomFolder.add(SGX.config, 'boxHeight', 8, 30).name('Alto (Y)').onChange(buildEncasing);
             roomFolder.add(SGX.config, 'boxDepth', 10, 50).name('Profundidad (Z)').onChange(buildEncasing);
+            roomFolder.add(SGX.config, 'camDistance', 0, 30).name('Distancia Cámara (Z)');
+            roomFolder.add(SGX.config, 'showGrids').name('Mostrar Rejillas').onChange(buildEncasing);
 
             gui.open();
         }
 
         // --- INPUT TRACKING (PARALLAX LOGIC) ---
         function updateTracking(nx, ny) {
+            const dirX = SGX.config.invertirX ? -1 : 1;
+            const dirY = SGX.config.invertirY ? -1 : 1;
             const multiplier = SGX.config.modo === 'Portal (Físico)' ? -1 : 1;
-            SGX.targetCamX = nx * SGX.config.amplitudX * multiplier;
-            SGX.targetCamY = -ny * SGX.config.amplitudY * multiplier;
+
+            SGX.targetCamX = nx * SGX.config.amplitudX * dirX * multiplier;
+            SGX.targetCamY = -ny * SGX.config.amplitudY * dirY * multiplier;
 
             document.getElementById('hud-x').innerText = SGX.targetCamX.toFixed(2);
             document.getElementById('hud-y').innerText = SGX.targetCamY.toFixed(2);
@@ -446,14 +496,13 @@
         function animate() {
             requestAnimationFrame(animate);
 
-            // Inercia de la cámara
             SGX.currentCamX += (SGX.targetCamX - SGX.currentCamX) * SGX.config.suavizado;
             SGX.currentCamY += (SGX.targetCamY - SGX.currentCamY) * SGX.config.suavizado;
 
             camera.position.x = SGX.currentCamX;
             camera.position.y = SGX.currentCamY;
-            camera.position.z = 8; // Distancia fija
-            camera.lookAt(0, 0, -SGX.config.boxDepth / 4); // Mirar ligeramente hacia el fondo
+            camera.position.z = SGX.config.camDistance; 
+            camera.lookAt(0, 0, -SGX.config.boxDepth / 4);
 
             renderer.render(scene, camera);
         }
