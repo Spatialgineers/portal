@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SGX - Parametric Spatial Gallery</title>
+    <style>
+        :root {
+            --sgx-yellow: #FDCC0D;
+            --sgx-blue: #32527B;
+            --sgx-copper: #B87333;
+            --sgx-bg: #050505;
+            --glass: rgba(20, 20, 20, 0.75);
+        }
+
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background: var(--sgx-bg);
+            font-family: 'Courier New', Courier, monospace;
+            color: var(--sgx-yellow);
+            touch-action: none;
+        }
+
+        canvas { 
+            display: block; 
+            position: absolute;
+            top: 0; left: 0; z-index: 1;
+        }
+
+        #webcam_feed { display: none; }
+        
+        #ui-layer {
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%;
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            background: rgba(5, 5, 5, 0.9);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            z-index: 50;
+            transition: opacity 0.6s ease, visibility 0.6s;
+        }
+
+        .sgx-panel {
+            background: var(--glass);
+            border: 1px solid var(--sgx-blue);
+            border-top: 4px solid var(--sgx-yellow);
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            width: 450px;
+            max-width: 90%;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.9), 0 0 20px rgba(50, 82, 123, 0.4);
+        }
+
+        .sgx-panel h1 {
+            margin: 0 0 10px 0;
+            font-size: 2rem;
+            letter-spacing: 4px;
+            font-weight: 900;
+            color: #fff;
+        }
+
+        button.sgx-btn {
+            background: var(--sgx-yellow); color: #000;
+            border: none; padding: 18px; font-size: 1rem;
+            font-weight: 900; font-family: inherit; cursor: pointer;
+            border-radius: 4px; text-transform: uppercase;
+            width: 100%; margin-bottom: 12px; transition: all 0.2s;
+        }
+        button.sgx-btn:hover { background: #fff; transform: translateY(-2px); }
+
+        button.secondary-btn {
+            background: transparent; color: #aaa;
+            border: 1px solid #444; padding: 12px;
+            width: 100%; cursor: pointer; border-radius: 4px;
+            text-transform: uppercase; font-size: 0.8rem; transition: 0.2s;
+        }
+        button.secondary-btn:hover { border-color: var(--sgx-blue); color: #fff; }
+
+        #hud {
+            position: absolute; bottom: 25px; left: 25px;
+            background: rgba(10, 10, 10, 0.8);
+            border-left: 4px solid var(--sgx-yellow);
+            padding: 15px; font-size: 0.75rem;
+            z-index: 10; display: none; pointer-events: none; color: #ccc;
+            text-transform: uppercase; letter-spacing: 1px;
+        }
+
+        .lil-gui { 
+            --background-color: rgba(20, 20, 20, 0.95);
+            --text-color: #eee;
+            --title-background-color: #111;
+            --widget-color: #333;
+            --hover-color: #444;
+            --focus-color: var(--sgx-yellow);
+            z-index: 100; 
+        }
+
+        /* Upload Inputs */
+        .hidden-upload { display: none; }
+    </style>
+
+    <!-- MediaPipe Global -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+
+    <!-- ES Modules -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/jsm/",
+            "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm"
+        }
+    }
+    </script>
+</head>
+<body>
+
+    <input type="file" id="local-image-upload" class="hidden-upload" accept="image/png, image/jpeg, image/webp">
+    
+    <video id="webcam_feed" autoplay playsinline muted></video>
+    <div id="scene-container"></div>
+
+    <div id="ui-layer">
+        <div class="sgx-panel">
+            <h1>SGX.GALLERY</h1>
+            <p style="color: #888; margin-bottom: 30px; font-size: 0.85rem;">
+                PARAMETRIC ASSET INJECTION V1<br>
+                <span style="color: var(--sgx-blue);">Tier 2 - Rent-to-Own Infrastructure</span>
+            </p>
+            <button id="btn-start" class="sgx-btn">ENLAZAR CÁMARA IA</button>
+            <button id="btn-manual" class="secondary-btn">SIMULACIÓN MANUAL</button>
+        </div>
+    </div>
+    
+    <div id="hud">
+        <b style="color:var(--sgx-yellow)">SISTEMA DE RASTREO ACTIVO</b><br>
+        MODO: <span id="hud-mode">-</span><br>
+        TRACK-X: <span id="hud-x">0.00</span><br>
+        TRACK-Y: <span id="hud-y">0.00</span>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import GUI from 'lil-gui';
+
+        // --- CORE ARCHITECTURE STATE ---
+        const SGX = {
+            targetCamX: 0, targetCamY: 0,
+            currentCamX: 0, currentCamY: 0,
+            trackingMode: 'Idle',
+            
+            config: {
+                // Room Params
+                boxWidth: 24, boxHeight: 12, boxDepth: 18,
+                modo: 'Portal (Físico)',
+                amplitudX: 10.0, amplitudY: 8.0, suavizado: 0.05,
+                
+                // Gallery Params
+                activeFrame: 0,
+                frameStyle: 'Neon Glow',
+                uploadAction: () => document.getElementById('local-image-upload').click(),
+                resetFrames: () => GalleryManager.resetDefaultTextures()
+            }
+        };
+
+        // --- THREE.JS ENGINE ---
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x050505, 0.02);
+        
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Optimizacion movil
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        document.getElementById('scene-container').appendChild(renderer.domElement);
+
+        // Iluminación Atmosférica SGX
+        const amb = new THREE.AmbientLight(0xffffff, 0.3);
+        scene.add(amb);
+        const spot = new THREE.SpotLight(0xffffff, 1.5);
+        spot.position.set(0, 10, 10);
+        spot.angle = Math.PI / 4;
+        spot.penumbra = 0.5;
+        scene.add(spot);
+
+        // --- 1. ENTORNO PARAMÉTRICO (THE ROOM) ---
+        let roomGroup = new THREE.Group();
+        scene.add(roomGroup);
+
+        function buildEncasing() {
+            while(roomGroup.children.length > 0) { 
+                const obj = roomGroup.children[0];
+                if(obj.geometry) obj.geometry.dispose();
+                roomGroup.remove(obj); 
+            }
+
+            const { boxWidth: w, boxHeight: h, boxDepth: d } = SGX.config;
+            const boxGeo = new THREE.BoxGeometry(w, h, d);
+            
+            // Material minimalista oscuro para resaltar el arte
+            const wallMat = new THREE.MeshStandardMaterial({
+                color: 0x111111, roughness: 0.9, metalness: 0.1, side: THREE.BackSide
+            });
+            const roomMesh = new THREE.Mesh(boxGeo, wallMat);
+            roomGroup.add(roomMesh);
+
+            // Rejilla de piso (Estilo Cyberpunk/SGX Blueprint)
+            const gridBottom = new THREE.GridHelper(Math.max(w, d), 20, 0x32527B, 0x1a1a1a);
+            gridBottom.position.y = -h / 2 + 0.05;
+            roomGroup.add(gridBottom);
+            
+            // Rejilla de techo iluminada
+            const gridTop = new THREE.GridHelper(Math.max(w, d), 20, 0xFDCC0D, 0x111111);
+            gridTop.position.y = h / 2 - 0.05;
+            roomGroup.add(gridTop);
+
+            GalleryManager.buildFrames(w, h, d);
+        }
+
+        // --- 2. GALLERY MANAGER (INYECCIÓN DE ASSETS) ---
+        const textureLoader = new THREE.TextureLoader();
+        
+        const GalleryManager = {
+            frames: [], // Arrays de objetos conteniendo { canvasMesh, borderMesh }
+            
+            buildFrames: function(w, h, d) {
+                // Limpiar marcos anteriores
+                this.frames.forEach(f => {
+                    scene.remove(f.group);
+                    f.canvasMesh.geometry.dispose();
+                    f.canvasMesh.material.dispose();
+                    f.borderMesh.geometry.dispose();
+                    f.borderMesh.material.dispose();
+                });
+                this.frames = [];
+
+                const frameConfigs = [
+                    { px: -w/3, py: 0, pz: -d/2 + 0.2, rotY: 0 },         // Izquierda
+                    { px: 0, py: 0, pz: -d/2 + 0.1, rotY: 0 },            // Centro
+                    { px: w/3, py: 0, pz: -d/2 + 0.2, rotY: 0 },          // Derecha
+                    { px: -w/2 + 0.1, py: 0, pz: 0, rotY: Math.PI/2 },    // Pared Izq
+                    { px: w/2 - 0.1, py: 0, pz: 0, rotY: -Math.PI/2 }     // Pared Der
+                ];
+
+                const canvasGeo = new THREE.PlaneGeometry(4, 6);
+                
+                frameConfigs.forEach((config, index) => {
+                    const group = new THREE.Group();
+                    
+                    // 1. El Canvas (Donde va la foto)
+                    const canvasMat = new THREE.MeshBasicMaterial({ color: 0x333333 });
+                    const canvasMesh = new THREE.Mesh(canvasGeo, canvasMat);
+                    
+                    // 2. El Borde (Paramétrico)
+                    const borderGeo = new THREE.BoxGeometry(4.4, 6.4, 0.2);
+                    const borderMat = this.getStyleMaterial();
+                    const borderMesh = new THREE.Mesh(borderGeo, borderMat);
+                    borderMesh.position.z = -0.15; // Ligeramente detrás del canvas
+
+                    group.add(borderMesh);
+                    group.add(canvasMesh);
+                    
+                    group.position.set(config.px, config.py, config.pz);
+                    group.rotation.y = config.rotY;
+                    
+                    scene.add(group);
+                    
+                    this.frames.push({ group, canvasMesh, borderMesh });
+                });
+
+                this.resetDefaultTextures();
+            },
+
+            getStyleMaterial: function() {
+                switch(SGX.config.frameStyle) {
+                    case 'Neon Glow': 
+                        return new THREE.MeshBasicMaterial({ color: 0xFDCC0D });
+                    case 'Industrial Blue': 
+                        return new THREE.MeshStandardMaterial({ color: 0x32527B, metalness: 0.8, roughness: 0.2 });
+                    case 'Minimalist White': 
+                        return new THREE.MeshBasicMaterial({ color: 0xffffff });
+                    default: 
+                        return new THREE.MeshBasicMaterial({ color: 0x444444 });
+                }
+            },
+
+            updateGlobalStyle: function() {
+                const newMat = this.getStyleMaterial();
+                this.frames.forEach(f => {
+                    f.borderMesh.material.dispose();
+                    f.borderMesh.material = newMat;
+                });
+            },
+
+            injectTexture: function(frameIndex, url) {
+                if(!this.frames[frameIndex]) return;
+                
+                textureLoader.load(url, (texture) => {
+                    texture.encoding = THREE.sRGBEncoding;
+                    // Ajustar aspect ratio si es necesario
+                    const aspect = texture.image.width / texture.image.height;
+                    const canvasMesh = this.frames[frameIndex].canvasMesh;
+                    
+                    // Forzamos la geometría a mantener el aspecto de la imagen (Base height 6)
+                    canvasMesh.geometry.dispose();
+                    canvasMesh.geometry = new THREE.PlaneGeometry(6 * aspect, 6);
+                    
+                    // Ajustar el borde también
+                    const borderMesh = this.frames[frameIndex].borderMesh;
+                    borderMesh.geometry.dispose();
+                    borderMesh.geometry = new THREE.BoxGeometry((6 * aspect) + 0.4, 6.4, 0.2);
+
+                    canvasMesh.material.map = texture;
+                    canvasMesh.material.color.setHex(0xffffff); // Quitar tint oscuro
+                    canvasMesh.material.needsUpdate = true;
+                });
+            },
+
+            resetDefaultTextures: function() {
+                const placeholders = [
+                    'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=800&auto=format&fit=crop', // Abstract
+                    'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?q=80&w=800&auto=format&fit=crop', // Tech
+                    'https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?q=80&w=800&auto=format&fit=crop', // 3D Render
+                    'https://images.unsplash.com/photo-1518640467707-6811f4a6ab73?q=80&w=800&auto=format&fit=crop', // Architecture
+                    'https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?q=80&w=800&auto=format&fit=crop'  // Metaverse
+                ];
+                
+                this.frames.forEach((f, i) => {
+                    this.injectTexture(i, placeholders[i % placeholders.length]);
+                });
+            }
+        };
+
+        // --- INICIALIZACIÓN ---
+        buildEncasing();
+
+        // --- UPLOAD HANDLER ---
+        document.getElementById('local-image-upload').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const blobUrl = URL.createObjectURL(file);
+                GalleryManager.injectTexture(SGX.config.activeFrame, blobUrl);
+            }
+        });
+
+        // --- GUI DEL ARQUITECTO ---
+        function initGUI() {
+            const gui = new GUI({ title: '⚙️ SGX ARCHITECT V3.5' });
+            
+            const galleryFolder = gui.addFolder('🖼️ Gallery Injection');
+            galleryFolder.add(SGX.config, 'activeFrame', { 
+                'Frame 1 (Izq)': 0, 
+                'Frame 2 (Centro)': 1, 
+                'Frame 3 (Der)': 2,
+                'Frame 4 (Pared Izq)': 3,
+                'Frame 5 (Pared Der)': 4
+            }).name('Seleccionar Marco').onChange(v => SGX.config.activeFrame = parseInt(v));
+            
+            galleryFolder.add(SGX.config, 'uploadAction').name('⬆️ Subir Imagen Local');
+            
+            galleryFolder.add(SGX.config, 'frameStyle', ['Neon Glow', 'Industrial Blue', 'Minimalist White', 'Dark Matter'])
+                .name('Estilo de Marco').onChange(() => GalleryManager.updateGlobalStyle());
+            galleryFolder.add(SGX.config, 'resetFrames').name('↻ Reset Defaults');
+
+            const physFolder = gui.addFolder('🔋 Tracking Physics');
+            physFolder.add(SGX.config, 'modo', ['Portal (Físico)', 'Espejo (Sigue Mirada)']);
+            physFolder.add(SGX.config, 'amplitudX', 1, 30).name('Amplitud X');
+            physFolder.add(SGX.config, 'amplitudY', 1, 30).name('Amplitud Y');
+
+            const roomFolder = gui.addFolder('📐 Dimensions');
+            roomFolder.add(SGX.config, 'boxWidth', 10, 50).name('Ancho (X)').onChange(buildEncasing);
+            roomFolder.add(SGX.config, 'boxDepth', 10, 50).name('Profundidad (Z)').onChange(buildEncasing);
+
+            gui.open();
+        }
+
+        // --- INPUT TRACKING (PARALLAX LOGIC) ---
+        function updateTracking(nx, ny) {
+            const multiplier = SGX.config.modo === 'Portal (Físico)' ? -1 : 1;
+            SGX.targetCamX = nx * SGX.config.amplitudX * multiplier;
+            SGX.targetCamY = -ny * SGX.config.amplitudY * multiplier;
+
+            document.getElementById('hud-x').innerText = SGX.targetCamX.toFixed(2);
+            document.getElementById('hud-y').innerText = SGX.targetCamY.toFixed(2);
+        }
+
+        window.addEventListener('pointermove', (e) => {
+            if (SGX.trackingMode === 'Manual') {
+                const nx = (e.clientX / window.innerWidth - 0.5) * 2;
+                const ny = (e.clientY / window.innerHeight - 0.5) * 2;
+                updateTracking(nx, ny);
+            }
+        });
+
+        // --- MEDIA PIPE IA ---
+        const video = document.getElementById('webcam_feed');
+        const faceMesh = new window.FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
+        faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: false, minDetectionConfidence: 0.5 });
+        faceMesh.onResults((res) => {
+            if (res.multiFaceLandmarks && res.multiFaceLandmarks.length > 0) {
+                const nose = res.multiFaceLandmarks[0][1];
+                updateTracking((nose.x - 0.5) * 2, (nose.y - 0.5) * 2);
+            }
+        });
+
+        async function aiLoop() {
+            if (SGX.trackingMode === 'Face IA') {
+                await faceMesh.send({image: video});
+                requestAnimationFrame(aiLoop);
+            }
+        }
+
+        // --- STARTUP FLOW ---
+        function launch(mode) {
+            SGX.trackingMode = mode;
+            document.getElementById('ui-layer').style.opacity = '0';
+            setTimeout(() => {
+                document.getElementById('ui-layer').style.visibility = 'hidden';
+                document.getElementById('hud').style.display = 'block';
+                document.getElementById('hud-mode').innerText = mode;
+                initGUI();
+            }, 600);
+        }
+
+        document.getElementById('btn-manual').onclick = () => launch('Manual');
+        document.getElementById('btn-start').onclick = async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+                video.srcObject = stream;
+                video.onloadedmetadata = () => {
+                    video.play();
+                    launch('Face IA');
+                    aiLoop();
+                };
+            } catch (e) {
+                alert("No se detectó cámara. Cambiando a Modo Manual (Mouse/Touch).");
+                launch('Manual');
+            }
+        };
+
+        // --- RENDER LOOP ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Inercia de la cámara
+            SGX.currentCamX += (SGX.targetCamX - SGX.currentCamX) * SGX.config.suavizado;
+            SGX.currentCamY += (SGX.targetCamY - SGX.currentCamY) * SGX.config.suavizado;
+
+            camera.position.x = SGX.currentCamX;
+            camera.position.y = SGX.currentCamY;
+            camera.position.z = 8; // Distancia fija
+            camera.lookAt(0, 0, -SGX.config.boxDepth / 4); // Mirar ligeramente hacia el fondo
+
+            renderer.render(scene, camera);
+        }
+        
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
