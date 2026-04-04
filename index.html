@@ -3,517 +3,736 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SGX - Parametric Spatial Gallery</title>
+    <title>TUTTO PASSA SGX VISUALIZER</title>
+    <!-- Frameworks UI y Tipografía -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    
+    <!-- Three.js Core & Pro Loaders -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/examples/js/loaders/DRACOLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/examples/js/loaders/KTX2Loader.js"></script>
+
     <style>
-        :root {
-            --sgx-yellow: #FDCC0D;
-            --sgx-blue: #32527B;
-            --sgx-copper: #B87333;
-            --sgx-bg: #050505;
-            --glass: rgba(20, 20, 20, 0.75);
-        }
-
-        body { 
-            margin: 0; 
-            overflow: hidden; 
-            background: var(--sgx-bg);
-            font-family: 'Courier New', Courier, monospace;
-            color: var(--sgx-yellow);
-            touch-action: none;
-        }
-
-        canvas { 
-            display: block; 
-            position: absolute;
-            top: 0; left: 0; z-index: 1;
-        }
-
-        #webcam_feed { display: none; }
+        body { margin: 0; overflow: hidden; background-color: #010101; font-family: 'Rajdhani', sans-serif; color: #ffffff; user-select: none; }
+        #canvas-container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; }
+        .scanlines { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02)); background-size: 100% 4px, 3px 100%; z-index: 5; pointer-events: none; opacity: 0.3; }
+        .ui-layer { position: absolute; z-index: 10; pointer-events: none; width: 100%; height: 100%; }
+        .interactive-element { pointer-events: auto; }
+        .font-tech { font-family: 'Share Tech Mono', monospace; }
+        .text-sgx-yellow { color: #FDCC0D; }
+        .bg-sgx-yellow { background-color: #FDCC0D; }
+        .glass-panel { background: rgba(5, 15, 35, 0.95); backdrop-filter: blur(40px); border: 1px solid rgba(253, 204, 13, 0.2); box-shadow: 0 0 50px rgba(0, 0, 0, 0.9); }
         
-        #ui-layer {
-            position: absolute; top: 0; left: 0;
-            width: 100%; height: 100%;
-            display: flex; flex-direction: column;
-            justify-content: center; align-items: center;
-            background: rgba(5, 5, 5, 0.9);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            z-index: 50;
-            transition: opacity 0.6s ease, visibility 0.6s;
-        }
+        /* Modificado para que soporte display block perfectamente y evite el desface de wrap */
+        .glitch-text { position: relative; }
+        .glitch-text::before, .glitch-text::after { content: attr(data-text); position: absolute; top: 0; left: 0; opacity: 0.8; width: 100%; }
+        .glitch-text::before { left: 2px; text-shadow: -1px 0 #ff00c1; animation: glitch-anim-1 2s infinite linear alternate-reverse; }
+        .glitch-text::after { left: -2px; text-shadow: -1px 0 #00fff9; animation: glitch-anim-2 3s infinite linear alternate-reverse; }
+        @keyframes glitch-anim-1 { 0% { clip: rect(20px, 9999px, 85px, 0); } 100% { clip: rect(10px, 9999px, 90px, 0); } }
+        @keyframes glitch-anim-2 { 0% { clip: rect(12px, 9999px, 59px, 0); } 100% { clip: rect(30px, 9999px, 70px, 0); } }
+        
+        input[type=range] { -webkit-appearance: none; background: transparent; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 18px; width: 18px; border-radius: 50%; background: #FDCC0D; cursor: pointer; margin-top: -7px; box-shadow: 0 0 10px #FDCC0D; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; background: rgba(50, 82, 123, 0.5); border-radius: 2px; }
+        
+        .ui-transition { transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease; }
+        .is-hidden { opacity: 0 !important; transform: scale(0.95) translateY(15px) !important; pointer-events: none !important; }
+        
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #FDCC0D; border-radius: 10px; }
+        
+        .color-input { -webkit-appearance: none; border: none; width: 100%; height: 24px; border-radius: 6px; cursor: pointer; background: transparent; }
+        .color-input::-webkit-color-swatch { border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; }
 
-        .sgx-panel {
-            background: var(--glass);
-            border: 1px solid var(--sgx-blue);
-            border-top: 4px solid var(--sgx-yellow);
-            border-radius: 8px;
-            padding: 40px;
-            text-align: center;
-            width: 450px;
-            max-width: 90%;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.9), 0 0 20px rgba(50, 82, 123, 0.4);
-        }
-
-        .sgx-panel h1 {
-            margin: 0 0 10px 0;
-            font-size: 2rem;
-            letter-spacing: 4px;
-            font-weight: 900;
-            color: #fff;
-        }
-
-        button.sgx-btn {
-            background: var(--sgx-yellow); color: #000;
-            border: none; padding: 18px; font-size: 1rem;
-            font-weight: 900; font-family: inherit; cursor: pointer;
-            border-radius: 4px; text-transform: uppercase;
-            width: 100%; margin-bottom: 12px; transition: all 0.2s;
-        }
-        button.sgx-btn:hover { background: #fff; transform: translateY(-2px); }
-
-        button.secondary-btn {
-            background: transparent; color: #aaa;
-            border: 1px solid #444; padding: 12px;
-            width: 100%; cursor: pointer; border-radius: 4px;
-            text-transform: uppercase; font-size: 0.8rem; transition: 0.2s;
-        }
-        button.secondary-btn:hover { border-color: var(--sgx-blue); color: #fff; }
-
-        #hud {
-            position: absolute; bottom: 25px; left: 25px;
-            background: rgba(10, 10, 10, 0.8);
-            border-left: 4px solid var(--sgx-yellow);
-            padding: 15px; font-size: 0.75rem;
-            z-index: 10; display: none; pointer-events: none; color: #ccc;
-            text-transform: uppercase; letter-spacing: 1px;
-        }
-
-        .lil-gui { 
-            --background-color: rgba(20, 20, 20, 0.95);
-            --text-color: #eee;
-            --title-background-color: #111;
-            --widget-color: #333;
-            --hover-color: #444;
-            --focus-color: var(--sgx-yellow);
-            z-index: 100; 
-        }
-
-        /* Upload Inputs */
-        .hidden-upload { display: none; }
+        .toggle-btn { background: rgba(255,255,255,0.05); color: #777; border: 1px solid rgba(255,255,255,0.1); transition: all 0.3s; cursor: pointer; text-align: center; }
+        .toggle-btn.active { background: #FDCC0D !important; color: #000 !important; border-color: #FDCC0D !important; box-shadow: 0 0 15px rgba(253, 204, 13, 0.4); }
     </style>
-
-    <!-- MediaPipe Global -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
-
-    <!-- ES Modules -->
-    <script type="importmap">
-    {
-        "imports": {
-            "three": "https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.module.js",
-            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/jsm/",
-            "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.19/+esm"
-        }
-    }
-    </script>
 </head>
 <body>
 
-    <input type="file" id="local-image-upload" class="hidden-upload" accept="image/png, image/jpeg, image/webp">
-    
-    <video id="webcam_feed" autoplay playsinline muted></video>
-    <div id="scene-container"></div>
+    <div id="ui-container" class="ui-layer flex flex-col justify-between p-4 sm:p-8 pointer-events-none">
+        <!-- Header -->
+        <div class="flex justify-between items-start">
+            <!-- TÍTULO SIEMPRE VISIBLE - Separado en dos bloques para evitar el glitch de salto de línea -->
+            <div id="header-left" class="glass-panel p-4 sm:p-5 rounded-br-3xl border-l-4 border-l-sgx-yellow shadow-2xl max-w-[90vw] sm:max-w-[70vw] md:max-w-none">
+                <h1 class="text-xl sm:text-3xl md:text-4xl font-bold tracking-[0.1em] sm:tracking-[0.15em] text-sgx-yellow leading-tight">
+                    <span class="block glitch-text" data-text="TUTTO PASSA SGX">TUTTO PASSA SGX</span>
+                    <span class="block glitch-text" data-text="VISUALIZER">VISUALIZER</span>
+                </h1>
+                <p class="font-tech text-[9px] sm:text-[10px] text-gray-400 mt-2 uppercase tracking-[0.3em] sm:tracking-[0.4em]">powered by Spatialgineers</p>
+            </div>
+            
+            <!-- RELOJ OCULTABLE -->
+            <div id="header-right" class="ui-transition text-right glass-panel px-5 py-3 rounded-bl-3xl border-r-4 border-r-sgx-yellow hidden sm:block shadow-2xl">
+                <p class="font-tech text-[10px] text-sgx-yellow uppercase tracking-widest italic">Caribbean_Engineering_Node</p>
+                <p class="font-tech text-[10px] text-white tracking-widest">CLK: <span id="clock-display">00:00:00</span></p>
+            </div>
+        </div>
 
-    <div id="ui-layer">
-        <div class="sgx-panel">
-            <h1>SGX.GALLERY</h1>
-            <p style="color: #888; margin-bottom: 30px; font-size: 0.85rem;">
-                PARAMETRIC ASSET INJECTION V1.5<br>
-                <span style="color: var(--sgx-blue);">Tier 2 - Rent-to-Own Infrastructure</span>
-            </p>
-            <button id="btn-start" class="sgx-btn">ENLAZAR CÁMARA IA</button>
-            <button id="btn-manual" class="secondary-btn">SIMULACIÓN MANUAL</button>
+        <!-- Panel de Control Principal (HUD) - OCULTABLE -->
+        <div class="ui-transition absolute right-4 sm:right-8 top-28 sm:top-36 w-[calc(100vw-2rem)] sm:w-80 max-h-[70vh] overflow-y-auto glass-panel p-6 rounded-2xl flex flex-col space-y-6 interactive-element shadow-2xl custom-scrollbar pointer-events-auto" id="control-panel">
+            <div class="flex items-center justify-between border-b border-sgx-yellow/10 pb-4">
+                <h2 class="text-sgx-yellow font-bold tracking-widest text-xs uppercase italic font-tech underline underline-offset-8 decoration-sgx-yellow/20">System Overrides</h2>
+                <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_10px_#22c55e]"></div>
+            </div>
+            
+            <button id="audio-btn" class="w-full py-4 bg-transparent border-2 border-sgx-yellow text-sgx-yellow font-bold text-[10px] uppercase tracking-[0.3em] transition-all duration-300 hover:bg-sgx-yellow hover:text-black shadow-lg active:scale-95">
+                [ Initialize Audio Sink ]
+            </button>
+
+            <!-- Media Injection -->
+            <div class="space-y-3 pt-2 border-t border-sgx-yellow/10">
+                <label class="text-[9px] text-gray-500 font-tech uppercase tracking-widest pl-2 block text-center italic text-sgx-yellow/80">Media Injection</label>
+                <div class="grid grid-cols-3 gap-1">
+                    <button id="upload-trigger" class="py-2 border border-white/10 text-white text-[8px] uppercase tracking-widest bg-white/5 hover:bg-white/10 rounded transition-all">GLB</button>
+                    <button id="bg-upload-trigger" class="py-2 border border-white/10 text-white text-[8px] uppercase tracking-widest bg-white/5 hover:bg-white/10 rounded transition-all">BG IMG</button>
+                    <button id="tex-upload-trigger" class="py-2 border border-white/10 text-white text-[8px] uppercase tracking-widest bg-white/5 hover:bg-white/10 rounded transition-all" title="Envelopes model in 360">TEX MASK</button>
+                </div>
+                <div class="space-y-1 mt-2">
+                    <label class="text-[9px] text-gray-400 font-tech flex justify-between uppercase"><span>Texture Reflection Zoom</span><span id="val-tex-scale" class="text-white">0.2</span></label>
+                    <input type="range" id="ctrl-tex-scale" min="0.01" max="1" step="0.01" value="0.2" class="w-full">
+                </div>
+                <input type="file" id="glb-upload" accept=".glb" class="hidden">
+                <input type="file" id="bg-upload" accept="image/*" class="hidden">
+                <input type="file" id="tex-upload" accept="image/*" class="hidden">
+            </div>
+
+            <!-- Physics Logic -->
+            <div class="space-y-4 pt-2 border-t border-sgx-yellow/10">
+                <label class="text-[9px] text-gray-500 font-tech uppercase tracking-widest pl-2 flex justify-between italic text-sgx-yellow/80">
+                    <span>Physics Logic</span>
+                    <button id="erratic-btn" class="text-white hover:text-sgx-yellow transition-colors font-tech text-[8px]">[ MAX ERRATIC ]</button>
+                </label>
+                <div class="grid grid-cols-4 gap-1">
+                    <button class="axis-btn toggle-btn text-[8px] py-2 rounded" data-axis="x">ROT_X</button>
+                    <button class="axis-btn toggle-btn active text-[8px] py-2 rounded" data-axis="y">ROT_Y</button>
+                    <button class="axis-btn toggle-btn text-[8px] py-2 rounded" data-axis="z">ROT_Z</button>
+                    <button id="rotate-toggle" class="toggle-btn active text-[8px] py-2 rounded font-bold italic">POWER</button>
+                </div>
+                <div class="space-y-1">
+                    <label class="text-[10px] text-gray-400 font-tech flex justify-between uppercase"><span>Global Velocity</span><span id="val-speed" class="text-white">0.01</span></label>
+                    <input type="range" id="ctrl-speed" min="0" max="0.3" step="0.001" value="0.01" class="w-full">
+                </div>
+            </div>
+
+            <!-- Morphology Matrix -->
+            <div class="space-y-3 pt-2 border-t border-sgx-yellow/10">
+                <label class="text-[9px] text-gray-500 font-tech uppercase tracking-widest pl-2 italic text-sgx-yellow/80">Morphology Matrix</label>
+                <div class="grid grid-cols-3 gap-1">
+                    <button class="geo-btn text-[8px] border border-white/5 hover:border-sgx-yellow text-white py-2 rounded bg-white/5 transition-all" data-geo="tutto">TUTTO PASSA</button>
+                    <button class="geo-btn text-[8px] border border-white/5 hover:border-sgx-yellow text-white py-2 rounded bg-white/5 transition-all" data-geo="gear">CHAMFER_GEAR</button>
+                    <button class="geo-btn text-[8px] border border-white/5 hover:border-sgx-yellow text-white py-2 rounded bg-white/5 transition-all" data-geo="triangle">INFINITY_TRI</button>
+                    <button class="geo-btn text-[8px] border border-white/5 hover:border-sgx-yellow text-white py-2 rounded bg-white/5 transition-all" data-geo="mobius">LEMNISCATA</button>
+                    <button class="geo-btn text-[8px] border border-white/5 hover:border-sgx-yellow text-white py-2 rounded bg-white/5 transition-all" data-geo="knot">NEXUS_KNOT</button>
+                    <button class="geo-btn text-[8px] border border-white/5 hover:border-sgx-yellow text-white py-2 rounded bg-white/5 transition-all" data-geo="pillar">DATA_PILLAR</button>
+                </div>
+                <div class="space-y-1 mt-2">
+                    <label class="text-[10px] text-gray-400 font-tech flex justify-between uppercase"><span>Global Asset Scale</span><span id="val-asset-scale" class="text-white">1.0</span></label>
+                    <input type="range" id="ctrl-asset-scale" min="0.1" max="5.0" step="0.05" value="1.0" class="w-full">
+                </div>
+            </div>
+
+            <!-- Geometry Shaders -->
+            <div class="space-y-4 pt-2 border-t border-sgx-yellow/10">
+                <div class="space-y-1">
+                    <label class="text-[10px] text-gray-400 font-tech flex justify-between uppercase"><span>Blueprint / Density</span><span id="val-density" class="text-white">1.0</span></label>
+                    <input type="range" id="ctrl-density" min="0" max="1" step="0.05" value="1.0" class="w-full">
+                </div>
+                <div class="space-y-1">
+                    <label class="text-[10px] text-gray-400 font-tech flex justify-between uppercase"><span>Mesh Distortion</span><span id="val-distortion" class="text-white">0.5</span></label>
+                    <input type="range" id="ctrl-distortion" min="0" max="3" step="0.1" value="0.5" class="w-full">
+                </div>
+                <div class="space-y-1">
+                    <label class="text-[10px] text-gray-400 font-tech flex justify-between uppercase"><span>Audio Gain</span><span id="val-sens" class="text-white">5.0</span></label>
+                    <input type="range" id="ctrl-sens" min="0.1" max="10" step="0.2" value="5.0" class="w-full">
+                </div>
+            </div>
+
+            <!-- Chroma Mapping -->
+            <div class="pt-2 border-t border-sgx-yellow/10 text-center">
+                <label class="text-[9px] text-gray-500 font-tech uppercase tracking-widest mb-3 block italic underline underline-offset-4 decoration-sgx-yellow/30">Chroma Matrix Mapping</label>
+                <div class="grid grid-cols-3 gap-3 px-2">
+                    <div class="text-center"><label class="text-[7px] text-gray-500 uppercase mb-1 block">Primary</label><input type="color" id="color-1" value="#FDCC0D" class="color-input"></div>
+                    <div class="text-center"><label class="text-[7px] text-gray-500 uppercase mb-1 block">Core</label><input type="color" id="color-2" value="#32527B" class="color-input"></div>
+                    <div class="text-center"><label class="text-[7px] text-gray-500 uppercase mb-1 block">Accent</label><input type="color" id="color-3" value="#B87333" class="color-input"></div>
+                </div>
+            </div>
+
+            <!-- Atmosphere -->
+            <div class="space-y-4 pt-4 border-t border-sgx-yellow/10">
+                <label class="text-[9px] text-gray-500 font-tech uppercase tracking-widest italic pl-2">Atmosphere</label>
+                <div class="space-y-1">
+                    <label class="text-[10px] text-gray-400 font-tech flex justify-between uppercase"><span>Particle Density</span><span id="val-part-count" class="text-white">10000</span></label>
+                    <input type="range" id="ctrl-part-count" min="500" max="25000" step="500" value="10000" class="w-full">
+                </div>
+                <div class="space-y-1">
+                    <!-- Tamaño base incrementado drásticamente a 1.5 -->
+                    <label class="text-[10px] text-gray-400 font-tech flex justify-between uppercase"><span>Particle Size</span><span id="val-part-size" class="text-white">1.5</span></label>
+                    <input type="range" id="ctrl-part-size" min="0.1" max="5.0" step="0.1" value="1.5" class="w-full">
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer Stats - OCULTABLE -->
+        <div id="footer-stats" class="ui-transition flex justify-between items-end font-tech text-[10px] text-gray-500 pb-16 sm:pb-0">
+            <div class="glass-panel px-4 py-2 rounded-tr-2xl border-b-2 border-b-sgx-yellow shadow-xl">
+                <p>OUTPUT: <span id="fps-counter" class="text-white">60</span> FPS // <span id="status-text" class="text-sgx-copper uppercase font-bold italic animate-pulse tracking-widest">Standby</span></p>
+                <p class="opacity-50 text-[8px]">SGX_ENGINE_V5 // CENTERED_ORBIT // MATCAP</p>
+            </div>
+            <div class="text-right hidden sm:block opacity-30 leading-tight uppercase font-tech tracking-widest">
+                <p>Spatialgineers LLC</p>
+                <p>Engineering Realities</p>
+            </div>
         </div>
     </div>
-    
-    <div id="hud">
-        <b style="color:var(--sgx-yellow)">SISTEMA DE RASTREO ACTIVO</b><br>
-        MODO: <span id="hud-mode">-</span><br>
-        TRACK-X: <span id="hud-x">0.00</span><br>
-        TRACK-Y: <span id="hud-y">0.00</span>
-    </div>
 
-    <script type="module">
-        import * as THREE from 'three';
-        import GUI from 'lil-gui';
+    <!-- HUD Toggle Button -->
+    <button id="toggle-ui-btn" class="absolute bottom-6 right-6 interactive-element px-6 py-3 border-2 border-sgx-yellow/40 text-sgx-yellow bg-black/90 backdrop-blur-2xl rounded-full font-tech text-[10px] tracking-[0.4em] z-50 hover:bg-sgx-yellow hover:text-black transition-all shadow-2xl">
+        HUD: HIDE [H]
+    </button>
 
-        // --- CORE ARCHITECTURE STATE ---
-        const SGX = {
-            targetCamX: 0, targetCamY: 0,
-            currentCamX: 0, currentCamY: 0,
-            trackingMode: 'Idle',
+    <div class="scanlines"></div>
+    <div id="canvas-container"></div>
+
+    <script>
+        // SHADERS OPTIMIZADOS v5
+        const vertexShaderGLSL = `
+            uniform float uTime;
+            uniform float uAudioData;
+            uniform float uNoiseAmpBase;
+            uniform float uAudioSens;
+            uniform vec2 uMouse;
+            uniform float uClickExplode;
             
-            config: {
-                // Room Params (From SGX Portal V3)
-                boxWidth: 24, boxHeight: 12, boxDepth: 18,
-                boxTextureUrl: 'https://images.unsplash.com/photo-1600607686527-6fb886090705?q=80&w=1000&auto=format&fit=crop', // Concrete texture
-                textureScale: 0.15,
-                showGrids: true,
-                camDistance: 8,
-                
-                // Physics
-                modo: 'Portal (Físico)',
-                amplitudX: 10.0, amplitudY: 8.0, suavizado: 0.05,
-                invertirX: false, invertirY: false,
-                
-                // Gallery Params
-                activeFrame: 0,
-                frameStyle: 'Neon Glow',
-                remoteImageUrl: 'https://images.unsplash.com/photo-1549490349-8643362247b5?q=80&w=800&auto=format&fit=crop', // Default URL
-                injectRemote: () => GalleryManager.injectTexture(SGX.config.activeFrame, SGX.config.remoteImageUrl),
-                uploadAction: () => document.getElementById('local-image-upload').click(),
-                resetFrames: () => GalleryManager.resetDefaultTextures()
-            }
-        };
+            varying vec2 vUv;
+            varying vec3 vViewNormal; 
+            varying vec3 vPosition;
 
-        // --- THREE.JS ENGINE ---
-        const scene = new THREE.Scene();
-        scene.fog = new THREE.FogExp2(0x020202, 0.025);
+            vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+            vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+            vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
+            vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+            float snoise(vec3 v) {
+                const vec2 C = vec2(1.0/6.0, 1.0/3.0); const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+                vec3 i = floor(v + dot(v, C.yyy)); vec3 x0 = v - i + dot(i, C.xxx);
+                vec3 g = step(x0.yzx, x0.xyz); vec3 l = 1.0 - g; vec3 i1 = min(g.xyz, l.zxy); vec3 i2 = max(g.xyz, l.zxy);
+                vec3 x1 = x0 - i1 + C.xxx; vec3 x2 = x0 - i2 + C.yyy; vec3 x3 = x0 - D.yyy;
+                i = mod289(i);
+                vec4 p = permute(permute(permute(i.z + vec4(0.0, i1.z, i2.z, 1.0)) + i.y + vec4(0.0, i1.y, i2.y, 1.0)) + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+                float n_ = 0.142857142857; vec3 ns = n_ * D.wyz - D.xzx;
+                vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+                vec4 x_ = floor(j * ns.z); vec4 y_ = floor(j - 7.0 * x_);
+                vec4 x = x_ * ns.x + ns.yyyy; vec4 y = y_ * ns.x + ns.yyyy;
+                vec4 h = 1.0 - abs(x) - abs(y);
+                vec4 b0 = vec4(x.xy, y.xy); vec4 b1 = vec4(x.zw, y.zw);
+                vec4 s0 = floor(b0)*2.0 + 1.0; vec4 s1 = floor(b1)*2.0 + 1.0; vec4 sh = -step(h, vec4(0.0));
+                vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy; vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+                vec3 p0 = vec3(a0.xy, h.x); vec3 p1 = vec3(a0.zw, h.y); vec3 p2 = vec3(a1.xy, h.z); vec3 p3 = vec3(a1.zw, h.w);
+                vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
+                p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+                vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0); m = m * m;
+                return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+            }
+
+            void main() {
+                vUv = uv;
+                vViewNormal = normalize(normalMatrix * normal);
+                
+                float noiseFreq = 0.6 + (uMouse.x * 0.2);
+                vec3 noisePos = vec3(position.x * noiseFreq + uTime * 0.2, position.y * noiseFreq + uTime * 0.2, position.z * noiseFreq);
+                
+                float smoothNoiseVal = max(0.0, (snoise(noisePos) * 0.5 + 0.5) * uNoiseAmpBase);
+                float explodeEffect = max(0.0, snoise(position * 2.5 + uTime) * uClickExplode);
+                float audioFactor = max(0.0, uAudioData * uAudioSens * 0.15);
+                
+                float totalScale = 1.0 + audioFactor + (smoothNoiseVal * 0.2) + (explodeEffect * 0.2);
+                
+                vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+                worldPosition.xyz *= totalScale;
+                
+                vPosition = worldPosition.xyz;
+                gl_Position = projectionMatrix * viewMatrix * worldPosition;
+            }
+        `;
+
+        const fragmentShaderGLSL = `
+            uniform float uTime;
+            uniform vec3 uColor1;
+            uniform vec3 uColor2;
+            uniform vec3 uColor3;
+            uniform float uAudioData;
+            uniform float uDensity;
+            uniform sampler2D uTexMask;
+            uniform bool uHasTex;
+            uniform float uTexScale;
+            
+            varying vec2 vUv;
+            varying vec3 vViewNormal;
+            varying vec3 vPosition;
+
+            vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+            vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+            vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
+            vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+            float snoise(vec3 v) {
+                const vec2 C = vec2(1.0/6.0, 1.0/3.0); const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+                vec3 i = floor(v + dot(v, C.yyy)); vec3 x0 = v - i + dot(i, C.xxx);
+                vec3 g = step(x0.yzx, x0.xyz); vec3 l = 1.0 - g; vec3 i1 = min(g.xyz, l.zxy); vec3 i2 = max(g.xyz, l.zxy);
+                vec3 x1 = x0 - i1 + C.xxx; vec3 x2 = x0 - i2 + C.yyy; vec3 x3 = x0 - D.yyy;
+                i = mod289(i);
+                vec4 p = permute(permute(permute(i.z + vec4(0.0, i1.z, i2.z, 1.0)) + i.y + vec4(0.0, i1.y, i2.y, 1.0)) + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+                float n_ = 0.142857142857; vec3 ns = n_ * D.wyz - D.xzx;
+                vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+                vec4 x_ = floor(j * ns.z); vec4 y_ = floor(j - 7.0 * x_);
+                vec4 x = x_ * ns.x + ns.yyyy; vec4 y = y_ * ns.x + ns.yyyy;
+                vec4 h = 1.0 - abs(x) - abs(y);
+                vec4 b0 = vec4(x.xy, y.xy); vec4 b1 = vec4(x.zw, y.zw);
+                vec4 s0 = floor(b0)*2.0 + 1.0; vec4 s1 = floor(b1)*2.0 + 1.0; vec4 sh = -step(h, vec4(0.0));
+                vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy; vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+                vec3 p0 = vec3(a0.xy, h.x); vec3 p1 = vec3(a0.zw, h.y); vec3 p2 = vec3(a1.xy, h.z); vec3 p3 = vec3(a1.zw, h.w);
+                vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
+                p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+                vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0); m = m * m;
+                return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+            }
+
+            void main() {
+                float colorNoise = snoise(vPosition * 0.05 + uTime * 0.2) * 0.5 + 0.5;
+                vec3 color = mix(uColor1, uColor2, colorNoise);
+                color = mix(color, uColor3, sin(vPosition.y * 0.1 + uTime) * 0.5 + 0.5);
+
+                vec3 viewLightDir = normalize(vec3(0.8, 1.0, 0.5)); 
+                float diffuse = max(dot(vViewNormal, viewLightDir), 0.4); 
+                
+                if(uHasTex) {
+                    vec2 matcapUV = vViewNormal.xy * 0.5 + 0.5;
+                    matcapUV = (matcapUV - 0.5) * (uTexScale * 5.0) + 0.5;
+                    vec4 texColor = texture2D(uTexMask, matcapUV);
+                    color = mix(color, texColor.rgb, 0.9);
+                }
+
+                vec3 finalColor = color * diffuse * 1.8; 
+                
+                vec3 viewDir = vec3(0.0, 0.0, 1.0);
+                float rimLight = pow(1.0 - clamp(dot(viewDir, vViewNormal), 0.0, 1.0), 2.5);
+                finalColor += uColor1 * rimLight * (0.5 + uAudioData * 2.0);
+                
+                float alpha = mix(0.6, 1.0, uDensity);
+                gl_FragColor = vec4(finalColor, alpha);
+            }
+        `;
+
+        let scene, camera, renderer, tiltGroup, activeGroup, coreWireframe, particlesMesh, gridHelper, uniforms, reactiveMaterial;
+        let audioContext, analyser, dataArray, isAudioInitialized = false;
+        let mouse = new THREE.Vector2(), targetMouse = new THREE.Vector2();
+        let windowHalfX = window.innerWidth / 2, windowHalfY = window.innerHeight / 2;
+        let clickExplodeTarget = 0.0;
         
-        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        renderer.outputEncoding = THREE.sRGBEncoding;
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        document.getElementById('scene-container').appendChild(renderer.domElement);
+        let globalGLTFLoader;
+        
+        let isRotating = true;
+        let rotationAxis = { x: false, y: true, z: false };
+        let rotationSpeed = 0.01;
+        let assetScale = 1.0;
+        let currentMorphology = 'tutto';
+        let lemniscataAnimParam = 0;
 
-        // Iluminación Atmosférica SGX
-        const amb = new THREE.AmbientLight(0xffffff, 0.4);
-        scene.add(amb);
-        const spot = new THREE.SpotLight(0xffffff, 2.0);
-        spot.position.set(0, 10, 5);
-        spot.angle = Math.PI / 3;
-        spot.penumbra = 0.5;
-        spot.decay = 2;
-        spot.distance = 50;
-        scene.add(spot);
+        const clock = new THREE.Clock();
+        const el = (id) => document.getElementById(id);
+        const safeSetText = (id, text) => { const item = el(id); if(item) item.innerText = text; };
 
-        // --- 1. ENTORNO PARAMÉTRICO (THE ROOM WITH TEXTURES) ---
-        let roomGroup = new THREE.Group();
-        scene.add(roomGroup);
-
-        const boxTexLoader = new THREE.TextureLoader();
-        boxTexLoader.setCrossOrigin('anonymous'); // Evita errores CORS
-        let currentTexUrl = SGX.config.boxTextureUrl;
-        let baseTex = boxTexLoader.load(currentTexUrl);
-        baseTex.wrapS = THREE.RepeatWrapping;
-        baseTex.wrapT = THREE.RepeatWrapping;
-        baseTex.encoding = THREE.sRGBEncoding;
-
-        function buildEncasing() {
-            while(roomGroup.children.length > 0) { 
-                const obj = roomGroup.children[0];
-                if(obj.geometry) obj.geometry.dispose();
-                roomGroup.remove(obj); 
+        function createParametricGeometry(func, slices, stacks) {
+            const vertices = [];
+            const uvs = [];
+            const indices = [];
+            const p0 = new THREE.Vector3();
+            for (let i = 0; i <= stacks; i++) {
+                const v = i / stacks;
+                for (let j = 0; j <= slices; j++) {
+                    const u = j / slices;
+                    func(u, v, p0);
+                    vertices.push(p0.x, p0.y, p0.z);
+                    uvs.push(u, v);
+                }
             }
+            for (let i = 0; i < stacks; i++) {
+                for (let j = 0; j < slices; j++) {
+                    const a = i * (slices + 1) + (j + 1);
+                    const b = i * (slices + 1) + j;
+                    const c = (i + 1) * (slices + 1) + j;
+                    const d = (i + 1) * (slices + 1) + (j + 1);
+                    indices.push(a, b, d);
+                    indices.push(b, c, d);
+                }
+            }
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+            geo.setIndex(indices);
+            geo.computeVertexNormals();
+            return geo;
+        }
 
-            const { boxWidth: w, boxHeight: h, boxDepth: d, textureScale: tScale } = SGX.config;
-            const boxGeo = new THREE.BoxGeometry(w, h, d);
+        window.onload = () => { init(); animate(); setupEventListeners(); };
+
+        function init() {
+            const container = el('canvas-container');
+            if(!container) return;
+
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x010101, 0.005);
             
-            // Recargar textura si cambia la URL
-            if (currentTexUrl !== SGX.config.boxTextureUrl) {
-                currentTexUrl = SGX.config.boxTextureUrl;
-                baseTex = boxTexLoader.load(currentTexUrl);
-                baseTex.wrapS = THREE.RepeatWrapping;
-                baseTex.wrapT = THREE.RepeatWrapping;
-                baseTex.encoding = THREE.sRGBEncoding;
-            }
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 20000);
+            camera.position.set(0, 5, 60);
 
-            // Material mapper independiente para cada eje (evita stretching)
-            const createWallMat = (repeatU, repeatV) => {
-                const tex = baseTex.clone();
-                tex.repeat.set(repeatU * tScale, repeatV * tScale);
-                tex.needsUpdate = true;
-                return new THREE.MeshStandardMaterial({
-                    map: tex,
-                    color: 0x888888, // Tint oscuro para no quemar la textura y dar ambiente
-                    side: THREE.BackSide,
-                    roughness: 0.9,
-                    metalness: 0.1
-                });
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.toneMapping = THREE.ReinhardToneMapping;
+            renderer.toneMappingExposure = 1.2;
+            container.appendChild(renderer.domElement);
+
+            globalGLTFLoader = new THREE.GLTFLoader();
+            
+            try {
+                if (typeof THREE.DRACOLoader !== 'undefined') {
+                    const dracoLoader = new THREE.DRACOLoader();
+                    dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.136.0/examples/js/libs/draco/');
+                    globalGLTFLoader.setDRACOLoader(dracoLoader);
+                }
+            } catch(e) { console.warn("DRACO init failed:", e); }
+            
+            uniforms = {
+                uTime: { value: 0.0 }, uAudioData: { value: 0.0 }, 
+                uColor1: { value: new THREE.Color(0xFDCC0D) },
+                uColor2: { value: new THREE.Color(0x32527B) }, 
+                uColor3: { value: new THREE.Color(0xB87333) }, 
+                uNoiseAmpBase: { value: 0.5 },
+                uAudioSens: { value: 5.0 },
+                uMouse: { value: new THREE.Vector2(0, 0) },
+                uDensity: { value: 1.0 },
+                uTexMask: { value: null }, uHasTex: { value: false }, 
+                uTexScale: { value: 0.2 },
+                uClickExplode: { value: 0.0 }
             };
 
-            // Cálculo de áreas (Ancho x Alto)
-            const matX = createWallMat(d, h); // Paredes L/R
-            const matY = createWallMat(w, d); // Techo/Piso
-            const matZ = createWallMat(w, h); // Frente/Fondo
+            reactiveMaterial = new THREE.ShaderMaterial({
+                vertexShader: vertexShaderGLSL,
+                fragmentShader: fragmentShaderGLSL,
+                uniforms: uniforms, transparent: true, side: THREE.DoubleSide
+            });
 
-            // Right, Left, Top, Bottom, Front, Back
-            const materials = [matX, matX, matY, matY, matZ, matZ];
+            tiltGroup = new THREE.Group();
+            scene.add(tiltGroup);
+
+            activeGroup = new THREE.Group();
+            tiltGroup.add(activeGroup);
+
+            loadCustomEnvironmentAndModel();
             
-            const roomMesh = new THREE.Mesh(boxGeo, materials);
-            roomGroup.add(roomMesh);
+            // Partículas más grandes desde el inicio (tamaño 1.5 en lugar de 0.15)
+            createParticles(10000, 1.5);
 
-            // Rejillas (Grids)
-            if (SGX.config.showGrids) {
-                const gridBottom = new THREE.GridHelper(Math.max(w, d), 20, 0x32527B, 0x111111);
-                gridBottom.position.y = -h / 2 + 0.05;
-                roomGroup.add(gridBottom);
-                
-                const gridTop = new THREE.GridHelper(Math.max(w, d), 20, 0xFDCC0D, 0x111111);
-                gridTop.position.y = h / 2 - 0.05;
-                roomGroup.add(gridTop);
-            }
-
-            GalleryManager.buildFrames(w, h, d);
+            gridHelper = new THREE.GridHelper(1000, 100, 0x32527B, 0x050505);
+            gridHelper.position.y = -50;
+            gridHelper.material.transparent = true;
+            gridHelper.material.opacity = 0.2;
+            scene.add(gridHelper);
         }
-
-        // --- 2. GALLERY MANAGER (INYECCIÓN DE ASSETS) ---
-        const textureLoader = new THREE.TextureLoader();
-        textureLoader.setCrossOrigin('anonymous'); // Evita errores CORS en texturas remotas
         
-        const GalleryManager = {
-            frames: [],
-            
-            buildFrames: function(w, h, d) {
-                this.frames.forEach(f => {
-                    scene.remove(f.group);
-                    if(f.canvasMesh.geometry) f.canvasMesh.geometry.dispose();
-                    if(f.canvasMesh.material.map) f.canvasMesh.material.map.dispose();
-                    f.canvasMesh.material.dispose();
-                    if(f.borderMesh.geometry) f.borderMesh.geometry.dispose();
-                    f.borderMesh.material.dispose();
-                });
-                this.frames = [];
+        function loadCustomEnvironmentAndModel() {
+            const imgUrl = 'https://static.wixstatic.com/media/fe81a7_c9b56435fd4b4430ba78aa2c64492965~mv2.jpeg';
+            new THREE.TextureLoader().load(imgUrl, (tex) => {
+                scene.background = tex;
+                tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+                uniforms.uTexMask.value = tex;
+                uniforms.uHasTex.value = true;
+            });
 
-                const frameConfigs = [
-                    { px: -w/3, py: 0, pz: -d/2 + 0.2, rotY: 0 },         // Izquierda
-                    { px: 0, py: 0, pz: -d/2 + 0.1, rotY: 0 },            // Centro
-                    { px: w/3, py: 0, pz: -d/2 + 0.2, rotY: 0 },          // Derecha
-                    { px: -w/2 + 0.1, py: 0, pz: 0, rotY: Math.PI/2 },    // Pared Izq
-                    { px: w/2 - 0.1, py: 0, pz: 0, rotY: -Math.PI/2 }     // Pared Der
-                ];
+            loadCustomGLB();
+        }
 
-                const canvasGeo = new THREE.PlaneGeometry(4, 6);
+        function loadCustomGLB() {
+            const glbUrl = 'https://static.wixstatic.com/3d/fe81a7_cf1ed4e58d0048efa955f39d347a9466.glb';
+            globalGLTFLoader.load(glbUrl, (gltf) => {
+                currentMorphology = 'tutto';
+                while(activeGroup.children.length > 0) activeGroup.remove(activeGroup.children[0]);
                 
-                frameConfigs.forEach((config, index) => {
-                    const group = new THREE.Group();
-                    
-                    const canvasMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
-                    const canvasMesh = new THREE.Mesh(canvasGeo, canvasMat);
-                    
-                    const borderGeo = new THREE.BoxGeometry(4.4, 6.4, 0.2);
-                    const borderMat = this.getStyleMaterial();
-                    const borderMesh = new THREE.Mesh(borderGeo, borderMat);
-                    borderMesh.position.z = -0.15;
-
-                    group.add(borderMesh);
-                    group.add(canvasMesh);
-                    
-                    group.position.set(config.px, config.py, config.pz);
-                    group.rotation.y = config.rotY;
-                    
-                    scene.add(group);
-                    this.frames.push({ group, canvasMesh, borderMesh });
+                const model = gltf.scene;
+                model.traverse((child) => {
+                    if (child.isMesh) {
+                        child.material = reactiveMaterial;
+                        child.geometry.computeVertexNormals();
+                    }
                 });
-
-                this.resetDefaultTextures();
-            },
-
-            getStyleMaterial: function() {
-                switch(SGX.config.frameStyle) {
-                    case 'Neon Glow': return new THREE.MeshBasicMaterial({ color: 0xFDCC0D });
-                    case 'Industrial Blue': return new THREE.MeshStandardMaterial({ color: 0x32527B, metalness: 0.8, roughness: 0.2 });
-                    case 'Minimalist White': return new THREE.MeshBasicMaterial({ color: 0xffffff });
-                    default: return new THREE.MeshBasicMaterial({ color: 0x444444 });
-                }
-            },
-
-            updateGlobalStyle: function() {
-                const newMat = this.getStyleMaterial();
-                this.frames.forEach(f => {
-                    f.borderMesh.material.dispose();
-                    f.borderMesh.material = newMat;
-                });
-            },
-
-            injectTexture: function(frameIndex, url) {
-                if(!this.frames[frameIndex]) return;
                 
-                textureLoader.load(url, (texture) => {
-                    texture.encoding = THREE.sRGBEncoding;
-                    const aspect = texture.image.width / texture.image.height;
-                    const canvasMesh = this.frames[frameIndex].canvasMesh;
-                    
-                    canvasMesh.geometry.dispose();
-                    canvasMesh.geometry = new THREE.PlaneGeometry(6 * aspect, 6);
-                    
-                    const borderMesh = this.frames[frameIndex].borderMesh;
-                    borderMesh.geometry.dispose();
-                    borderMesh.geometry = new THREE.BoxGeometry((6 * aspect) + 0.4, 6.4, 0.2);
-
-                    canvasMesh.material.map = texture;
-                    canvasMesh.material.color.setHex(0xffffff);
-                    canvasMesh.material.needsUpdate = true;
-                }, undefined, (err) => {
-                    console.error("Error cargando textura:", err);
-                    alert("No se pudo cargar la imagen. Verifica que la URL sea válida y permita CORS.");
-                });
-            },
-
-            resetDefaultTextures: function() {
-                const placeholders = [
-                    'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=800&auto=format&fit=crop',
-                    'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?q=80&w=800&auto=format&fit=crop',
-                    'https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?q=80&w=800&auto=format&fit=crop',
-                    'https://images.unsplash.com/photo-1518640467707-6811f4a6ab73?q=80&w=800&auto=format&fit=crop',
-                    'https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?q=80&w=800&auto=format&fit=crop'
-                ];
-                this.frames.forEach((f, i) => {
-                    this.injectTexture(i, placeholders[i % placeholders.length]);
-                });
-            }
-        };
-
-        // --- INICIALIZACIÓN ---
-        buildEncasing();
-
-        // --- UPLOAD HANDLER ---
-        document.getElementById('local-image-upload').addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                const blobUrl = URL.createObjectURL(file);
-                GalleryManager.injectTexture(SGX.config.activeFrame, blobUrl);
-            }
-        });
-
-        // --- GUI DEL ARQUITECTO ---
-        function initGUI() {
-            const gui = new GUI({ title: '⚙️ SGX ARCHITECT V3.5' });
-            
-            const galleryFolder = gui.addFolder('🖼️ Gallery Injection');
-            galleryFolder.add(SGX.config, 'activeFrame', { 
-                'Frame 1 (Izq)': 0, 'Frame 2 (Centro)': 1, 'Frame 3 (Der)': 2,
-                'Frame 4 (Pared Izq)': 3, 'Frame 5 (Pared Der)': 4
-            }).name('Seleccionar Marco').onChange(v => SGX.config.activeFrame = parseInt(v));
-            
-            galleryFolder.add(SGX.config, 'remoteImageUrl').name('URL de Imagen');
-            galleryFolder.add(SGX.config, 'injectRemote').name('🔗 Inyectar URL');
-            galleryFolder.add(SGX.config, 'uploadAction').name('⬆️ Subir Archivo Local');
-            
-            galleryFolder.add(SGX.config, 'frameStyle', ['Neon Glow', 'Industrial Blue', 'Minimalist White', 'Dark Matter'])
-                .name('Estilo de Marco').onChange(() => GalleryManager.updateGlobalStyle());
-            galleryFolder.add(SGX.config, 'resetFrames').name('↻ Reset Defaults');
-
-            const physFolder = gui.addFolder('🔋 Tracking Physics');
-            physFolder.add(SGX.config, 'modo', ['Portal (Físico)', 'Espejo (Sigue Mirada)']);
-            physFolder.add(SGX.config, 'amplitudX', 1, 30).name('Amplitud X');
-            physFolder.add(SGX.config, 'amplitudY', 1, 30).name('Amplitud Y');
-            physFolder.add(SGX.config, 'suavizado', 0.001, 0.5).name('Inercia (Fricción)');
-            physFolder.add(SGX.config, 'invertirX').name('Invertir Eje X');
-            physFolder.add(SGX.config, 'invertirY').name('Invertir Eje Y');
-
-            const roomFolder = gui.addFolder('📐 Space Dimensions & Textures');
-            roomFolder.add(SGX.config, 'boxTextureUrl').name('URL Textura Habitación').onChange(buildEncasing);
-            roomFolder.add(SGX.config, 'textureScale', 0.05, 1.0).name('Escala de Textura').onChange(buildEncasing);
-            roomFolder.add(SGX.config, 'boxWidth', 10, 50).name('Ancho (X)').onChange(buildEncasing);
-            roomFolder.add(SGX.config, 'boxHeight', 8, 30).name('Alto (Y)').onChange(buildEncasing);
-            roomFolder.add(SGX.config, 'boxDepth', 10, 50).name('Profundidad (Z)').onChange(buildEncasing);
-            roomFolder.add(SGX.config, 'camDistance', 0, 30).name('Distancia Cámara (Z)');
-            roomFolder.add(SGX.config, 'showGrids').name('Mostrar Rejillas').onChange(buildEncasing);
-
-            gui.open();
+                const box = new THREE.Box3().setFromObject(model);
+                const center = box.getCenter(new THREE.Vector3());
+                const size = box.getSize(new THREE.Vector3());
+                
+                model.position.sub(center);
+                
+                const wrapper = new THREE.Group();
+                wrapper.add(model);
+                
+                const maxDim = Math.max(size.x, size.y, size.z);
+                const s = 45 / maxDim;
+                wrapper.scale.set(s, s, s);
+                
+                activeGroup.add(wrapper);
+                
+                safeSetText('status-text', 'Tutto_Passa_Loaded');
+                coreWireframe = null; 
+            }, undefined, (err) => console.error("Error loading default GLB:", err));
         }
 
-        // --- INPUT TRACKING (PARALLAX LOGIC) ---
-        function updateTracking(nx, ny) {
-            const dirX = SGX.config.invertirX ? -1 : 1;
-            const dirY = SGX.config.invertirY ? -1 : 1;
-            const multiplier = SGX.config.modo === 'Portal (Físico)' ? -1 : 1;
-
-            SGX.targetCamX = nx * SGX.config.amplitudX * dirX * multiplier;
-            SGX.targetCamY = -ny * SGX.config.amplitudY * dirY * multiplier;
-
-            document.getElementById('hud-x').innerText = SGX.targetCamX.toFixed(2);
-            document.getElementById('hud-y').innerText = SGX.targetCamY.toFixed(2);
+        function createParticles(count, size) {
+            if(particlesMesh) { scene.remove(particlesMesh); particlesMesh.geometry.dispose(); particlesMesh.material.dispose(); }
+            const geo = new THREE.BufferGeometry();
+            const pos = new Float32Array(count * 3);
+            for(let i = 0; i < count * 3; i++) { pos[i] = (Math.random() - 0.5) * 1000; }
+            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+            particlesMesh = new THREE.Points(geo, new THREE.PointsMaterial({ 
+                size: size, color: uniforms.uColor1.value, transparent: true, opacity: 1.0, blending: THREE.AdditiveBlending 
+            }));
+            scene.add(particlesMesh);
         }
 
-        window.addEventListener('pointermove', (e) => {
-            if (SGX.trackingMode === 'Manual') {
-                const nx = (e.clientX / window.innerWidth - 0.5) * 2;
-                const ny = (e.clientY / window.innerHeight - 0.5) * 2;
-                updateTracking(nx, ny);
-            }
-        });
-
-        // --- MEDIA PIPE IA ---
-        const video = document.getElementById('webcam_feed');
-        const faceMesh = new window.FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
-        faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: false, minDetectionConfidence: 0.5 });
-        faceMesh.onResults((res) => {
-            if (res.multiFaceLandmarks && res.multiFaceLandmarks.length > 0) {
-                const nose = res.multiFaceLandmarks[0][1];
-                updateTracking((nose.x - 0.5) * 2, (nose.y - 0.5) * 2);
-            }
-        });
-
-        async function aiLoop() {
-            if (SGX.trackingMode === 'Face IA') {
-                await faceMesh.send({image: video});
-                requestAnimationFrame(aiLoop);
-            }
-        }
-
-        // --- STARTUP FLOW ---
-        function launch(mode) {
-            SGX.trackingMode = mode;
-            document.getElementById('ui-layer').style.opacity = '0';
-            setTimeout(() => {
-                document.getElementById('ui-layer').style.visibility = 'hidden';
-                document.getElementById('hud').style.display = 'block';
-                document.getElementById('hud-mode').innerText = mode;
-                initGUI();
-            }, 600);
-        }
-
-        document.getElementById('btn-manual').onclick = () => launch('Manual');
-        document.getElementById('btn-start').onclick = async () => {
+        async function initAudio() {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
-                video.srcObject = stream;
-                video.onloadedmetadata = () => {
-                    video.play();
-                    launch('Face IA');
-                    aiLoop();
-                };
-            } catch (e) {
-                alert("No se detectó cámara. Cambiando a Modo Manual (Mouse/Touch).");
-                launch('Manual');
-            }
-        };
+                if (audioContext && audioContext.state === 'suspended') await audioContext.resume();
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const source = audioContext.createMediaStreamSource(stream);
+                analyser = audioContext.createAnalyser(); analyser.fftSize = 256;
+                source.connect(analyser);
+                dataArray = new Uint8Array(analyser.frequencyBinCount);
+                isAudioInitialized = true;
+                const btn = el('audio-btn');
+                if(btn) { btn.innerText = "SINK: ONLINE"; btn.classList.add('bg-sgx-yellow', 'text-black'); }
+                safeSetText('status-text', 'Live Synchronized');
+            } catch (err) { safeSetText('status-text', 'Access Denied'); }
+        }
 
-        // --- RENDER LOOP ---
+        function updateLemniscataGeometry(timeParam) {
+            const lemniscateFunc = (u, v, target) => {
+                u *= Math.PI * 2;
+                const scale = 20.0;
+                const x = (scale * Math.cos(u)) / (1.0 + Math.pow(Math.sin(u), 2.0));
+                const y = (scale * Math.sin(u) * Math.cos(u)) / (1.0 + Math.pow(Math.sin(u), 2.0));
+                const phi = v * Math.PI * 2;
+                const r = 3.0 + Math.sin(u * 2.0 + timeParam) * 1.0;
+                target.set(x + r * Math.cos(phi), y + r * Math.sin(phi), r * Math.sin(phi + u) + Math.sin(u + timeParam)*5.0);
+            };
+            const newGeo = createParametricGeometry(lemniscateFunc, 128, 32);
+            if (activeGroup.children.length > 0) {
+                activeGroup.children[0].geometry.dispose();
+                activeGroup.children[0].geometry = newGeo;
+            }
+        }
+
+        function changeMorphology(type) {
+            currentMorphology = type;
+            if (type === 'tutto') { loadCustomGLB(); return; }
+            
+            while(activeGroup.children.length > 0) activeGroup.remove(activeGroup.children[0]);
+            let newGeo, newWireGeo;
+            switch(type) {
+                case 'gear':
+                    const gearShape = new THREE.Shape();
+                    const teeth = 12, inner = 9, outer = 13;
+                    const step = Math.PI * 2 / teeth;
+                    for (let i = 0; i < teeth; i++) {
+                        const a = i * step;
+                        if (i === 0) gearShape.moveTo(Math.cos(a - 0.1)*inner, Math.sin(a - 0.1)*inner);
+                        gearShape.lineTo(Math.cos(a + 0.1)*inner, Math.sin(a + 0.1)*inner);
+                        gearShape.lineTo(Math.cos(a + 0.2)*outer, Math.sin(a + 0.2)*outer);
+                        gearShape.lineTo(Math.cos(a + step - 0.2)*outer, Math.sin(a + step - 0.2)*outer);
+                        gearShape.lineTo(Math.cos(a + step - 0.1)*inner, Math.sin(a + step - 0.1)*inner);
+                    }
+                    gearShape.closePath();
+                    const hole = new THREE.Path(); hole.absarc(0, 0, 5, 0, Math.PI * 2, true); gearShape.holes.push(hole);
+                    newGeo = new THREE.ExtrudeGeometry(gearShape, { depth: 6, bevelEnabled: true, bevelThickness: 0.8, bevelSize: 0.8, bevelSegments: 5, curveSegments: 64 });
+                    newWireGeo = newGeo.clone(); break;
+                case 'triangle': newGeo = new THREE.TorusGeometry(15, 7, 6, 128); newWireGeo = new THREE.TorusGeometry(15.3, 7.1, 6, 64); break;
+                case 'mobius':
+                    const dummyGeo = new THREE.BufferGeometry(); newGeo = dummyGeo; newWireGeo = dummyGeo.clone(); break;
+                case 'knot': newGeo = new THREE.TorusKnotGeometry(10, 4, 300, 64); newWireGeo = new THREE.TorusKnotGeometry(10.3, 4.1, 150, 32); break;
+                case 'pillar': newGeo = new THREE.CylinderGeometry(10, 10, 80, 128, 64); newWireGeo = new THREE.CylinderGeometry(10.2, 10.2, 80.2, 32, 16); break;
+            }
+            const mesh = new THREE.Mesh(newGeo, reactiveMaterial);
+            activeGroup.add(mesh);
+            coreWireframe = new THREE.Mesh(newWireGeo, new THREE.MeshBasicMaterial({ color: 0xFFFFFF, wireframe: true, transparent: true, opacity: 0.05 }));
+            activeGroup.add(coreWireframe);
+            if (type === 'mobius') updateLemniscataGeometry(0);
+            updateGroupScale();
+        }
+
+        function updateGroupScale() { activeGroup.scale.set(assetScale, assetScale, assetScale); }
+
+        function setupEventListeners() {
+            window.addEventListener('resize', () => { windowHalfX = window.innerWidth / 2; windowHalfY = window.innerHeight / 2; camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+            document.addEventListener('mousemove', (e) => { targetMouse.set((e.clientX - windowHalfX) / windowHalfX, (e.clientY - windowHalfY) / windowHalfY); });
+            document.addEventListener('touchmove', (e) => { if(e.touches.length > 0) targetMouse.set((e.touches[0].clientX - windowHalfX) / windowHalfX, (e.touches[0].clientY - windowHalfY) / windowHalfY); });
+
+            // LÓGICA DE OCULTAMIENTO (Deja el título visible)
+            const toggleElements = [el('control-panel'), el('footer-stats'), el('header-right')];
+            const btn = el('toggle-ui-btn');
+            let uiHidden = false;
+            
+            const toggleHUD = () => {
+                uiHidden = !uiHidden;
+                toggleElements.forEach(el => {
+                    if(el) el.classList.toggle('is-hidden', uiHidden);
+                });
+                if(btn) btn.innerText = uiHidden ? "HUD: SHOW [H]" : "HUD: HIDE [H]";
+            };
+
+            if(btn) btn.onclick = toggleHUD;
+            
+            document.addEventListener('keydown', (e) => { 
+                if((e.key.toLowerCase() === 'h' || e.key === 'Escape') && btn) { 
+                    toggleHUD();
+                } 
+            });
+            
+            document.addEventListener('click', (e) => { 
+                if (audioContext && audioContext.state === 'suspended') audioContext.resume(); 
+                if(!e.target.closest('.interactive-element')) clickExplodeTarget = 8.0;
+            });
+
+            if(el('audio-btn')) el('audio-btn').onclick = (e) => { e.stopPropagation(); if(!isAudioInitialized) initAudio(); };
+            if(el('ctrl-distortion')) el('ctrl-distortion').oninput = (e) => { uniforms.uNoiseAmpBase.value = parseFloat(e.target.value); safeSetText('val-distortion', e.target.value); };
+            if(el('ctrl-sens')) el('ctrl-sens').oninput = (e) => { uniforms.uAudioSens.value = parseFloat(e.target.value); safeSetText('val-sens', e.target.value); };
+            if(el('ctrl-density')) el('ctrl-density').oninput = (e) => { uniforms.uDensity.value = parseFloat(e.target.value); safeSetText('val-density', e.target.value); if(coreWireframe) coreWireframe.material.opacity = (1 - parseFloat(e.target.value)) * 0.4 + 0.05; };
+            if(el('ctrl-part-count')) el('ctrl-part-count').onchange = (e) => { createParticles(parseInt(e.target.value), parseFloat(el('ctrl-part-size').value)); safeSetText('val-part-count', e.target.value); };
+            if(el('ctrl-part-size')) el('ctrl-part-size').oninput = (e) => { if(particlesMesh) particlesMesh.material.size = parseFloat(e.target.value); safeSetText('val-part-size', e.target.value); };
+            if(el('ctrl-tex-scale')) el('ctrl-tex-scale').oninput = (e) => { uniforms.uTexScale.value = parseFloat(e.target.value); safeSetText('val-tex-scale', e.target.value); };
+            if(el('ctrl-asset-scale')) el('ctrl-asset-scale').oninput = (e) => { assetScale = parseFloat(e.target.value); updateGroupScale(); safeSetText('val-asset-scale', e.target.value); };
+
+            if(el('rotate-toggle')) el('rotate-toggle').onclick = (e) => { isRotating = !isRotating; e.target.classList.toggle('active', isRotating); };
+            if(el('ctrl-speed')) el('ctrl-speed').oninput = (e) => { rotationSpeed = parseFloat(e.target.value); safeSetText('val-speed', e.target.value); };
+            document.querySelectorAll('.axis-btn').forEach(b => b.onclick = (e) => { const axis = e.target.dataset.axis; rotationAxis[axis] = !rotationAxis[axis]; e.target.classList.toggle('active', rotationAxis[axis]); });
+            if(el('erratic-btn')) el('erratic-btn').onclick = () => { isRotating = true; el('rotate-toggle').classList.add('active'); rotationAxis = {x: true, y: true, z: true}; document.querySelectorAll('.axis-btn').forEach(b => b.classList.add('active')); rotationSpeed = 0.2; el('ctrl-speed').value = 0.2; safeSetText('val-speed', "0.20"); };
+
+            if(el('color-1')) el('color-1').oninput = (e) => { uniforms.uColor1.value.set(e.target.value); if(particlesMesh) particlesMesh.material.color.set(e.target.value); };
+            if(el('color-2')) el('color-2').oninput = (e) => uniforms.uColor2.value.set(e.target.value);
+            if(el('color-3')) el('color-3').oninput = (e) => uniforms.uColor3.set(e.target.value);
+
+            document.querySelectorAll('.geo-btn').forEach(b => b.onclick = (e) => changeMorphology(e.target.dataset.geo));
+
+            const glbIn = el('glb-upload'), bgIn = el('bg-upload'), texIn = el('tex-upload');
+            if(el('upload-trigger')) el('upload-trigger').onclick = () => glbIn.click();
+            if(el('bg-upload-trigger')) el('bg-upload-trigger').onclick = () => bgIn.click();
+            if(el('tex-upload-trigger')) el('tex-upload-trigger').onclick = () => texIn.click();
+
+            glbIn.onchange = (ev) => {
+                const file = ev.target.files[0]; if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    globalGLTFLoader.parse(e.target.result, '', (gltf) => {
+                        currentMorphology = 'custom_glb';
+                        while(activeGroup.children.length > 0) activeGroup.remove(activeGroup.children[0]);
+                        
+                        const model = gltf.scene;
+                        model.traverse((child) => { if (child.isMesh) { child.material = reactiveMaterial; child.geometry.computeVertexNormals(); } });
+                        
+                        const box = new THREE.Box3().setFromObject(model);
+                        const center = box.getCenter(new THREE.Vector3());
+                        const size = box.getSize(new THREE.Vector3());
+                        
+                        model.position.sub(center);
+                        
+                        const wrapper = new THREE.Group();
+                        wrapper.add(model);
+                        
+                        const maxDim = Math.max(size.x, size.y, size.z);
+                        const s = 45 / maxDim;
+                        wrapper.scale.set(s, s, s);
+                        
+                        activeGroup.add(wrapper);
+                        coreWireframe = null;
+                        safeSetText('status-text', 'Asset_Injected');
+                    }, (err) => { console.error("Parse Error:", err); });
+                };
+                reader.readAsArrayBuffer(file);
+            };
+
+            bgIn.onchange = (ev) => {
+                const file = ev.target.files[0]; if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => { new THREE.TextureLoader().load(e.target.result, (tex) => { scene.background = tex; }); };
+                reader.readAsDataURL(file);
+            };
+
+            texIn.onchange = (ev) => {
+                const file = ev.target.files[0]; if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    new THREE.TextureLoader().load(e.target.result, (tex) => {
+                        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+                        uniforms.uTexMask.value = tex;
+                        uniforms.uHasTex.value = true;
+                        safeSetText('status-text', 'MATCAP_ENVELOPED');
+                    });
+                };
+                reader.readAsDataURL(file);
+            };
+        }
+
         function animate() {
             requestAnimationFrame(animate);
+            const time = clock.getElapsedTime();
+            safeSetText('clock-display', new Date().toTimeString().split(' ')[0]);
+            
+            if(clickExplodeTarget > 0) {
+                clickExplodeTarget -= 0.15;
+                if(clickExplodeTarget < 0) clickExplodeTarget = 0;
+            }
+            uniforms.uClickExplode.value = clickExplodeTarget;
+            
+            if (isAudioInitialized && analyser) {
+                analyser.getByteFrequencyData(dataArray);
+                let sum = 0; for(let i=0; i<15; i++) sum += dataArray[i];
+                const audio = sum / 15 / 255.0;
+                uniforms.uAudioData.value = audio;
+                if(gridHelper) gridHelper.position.y = -50 + (audio * 25);
+                if(particlesMesh) { particlesMesh.rotation.y += audio * 0.05; particlesMesh.position.z = Math.sin(time) * 30 * audio; }
+            } else { uniforms.uAudioData.value = Math.sin(time * 1.5) * 0.12 + 0.1; }
+            
+            uniforms.uTime.value = time;
+            uniforms.uMouse.value.lerp(targetMouse, 0.05);
+            mouse.lerp(targetMouse, 0.05);
+            
+            // MAGNETIC TILT Premium
+            tiltGroup.rotation.z = mouse.x * -0.4;
+            tiltGroup.rotation.x = mouse.y * 0.4;
 
-            SGX.currentCamX += (SGX.targetCamX - SGX.currentCamX) * SGX.config.suavizado;
-            SGX.currentCamY += (SGX.targetCamY - SGX.currentCamY) * SGX.config.suavizado;
+            camera.position.x += (mouse.x * 60 - camera.position.x) * 0.05;
+            camera.position.y += (-mouse.y * 40 + 5 - camera.position.y) * 0.05;
+            camera.lookAt(0,0,0);
+            
+            if(isRotating) {
+                if(rotationAxis.x) activeGroup.rotation.x += rotationSpeed;
+                if(rotationAxis.y) activeGroup.rotation.y += rotationSpeed;
+                if(rotationAxis.z) activeGroup.rotation.z += rotationSpeed;
+            }
 
-            camera.position.x = SGX.currentCamX;
-            camera.position.y = SGX.currentCamY;
-            camera.position.z = SGX.config.camDistance; 
-            camera.lookAt(0, 0, -SGX.config.boxDepth / 4);
+            if (currentMorphology === 'mobius') {
+                lemniscataAnimParam += 0.03 + (uniforms.uAudioData.value * 0.1);
+                updateLemniscataGeometry(lemniscataAnimParam);
+            }
+            
+            if(currentMorphology === 'knot' && activeGroup.children.length > 0) {
+                activeGroup.children[0].rotation.x += 0.02;
+                activeGroup.children[0].rotation.z += 0.01;
+            }
 
+            if(Math.round(time*10)%5===0) safeSetText('fps-counter', Math.round(1/clock.getDelta()));
             renderer.render(scene, camera);
         }
-        
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-
-        animate();
     </script>
 </body>
 </html>
